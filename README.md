@@ -67,6 +67,9 @@ lml <venues|acts> list   [--q QUERY] [--page N] [--per-page N] [--json]
 lml <venues|acts> show   <id> [--json]
 lml <venues|acts> create --name NAME [--field value ...] [--json]
 lml <venues|acts> update <id> [--field value ...] [--unset FIELD] [--json]
+lml uploads create --file PATH [--venue-id ID] [--source NAME] [--json]
+lml uploads list   [--source NAME] [--page N] [--per-page N] [--json]
+lml uploads show   <id> [--json]
 ```
 
 `lml help` lists every writable field for both resources.
@@ -100,6 +103,61 @@ lml venues list --per-page 100 --json | jq -r '.records[] | [.id, .name] | @tsv'
 Comma separated values become JSON arrays (`--tags`, `--genres`). `--capacity`
 becomes a number, `--latitude` and `--longitude` become floats.
 
+## Uploading gigs from a file
+
+`lml uploads create` posts a file of **clipper** content — the same format the
+admin upload form takes — and the API creates or updates the gigs it describes.
+This is the quickest way to get a venue's week in.
+
+```sh
+lml uploads create --file friday.clipper --venue-id 9f8e7d6c-... --source cli
+cat friday.clipper | lml uploads create --file - --venue-id 9f8e7d6c-...
+```
+
+Entries are separated by a line of `---`, and each entry is `key: value` lines:
+
+```
+name: Sniffers Live
+date: 2026-09-01
+time: 20:00
+acts: Amyl and the Sniffers | Cable Ties
+price: 30.00 | presale
+---
+name: Quiet Tuesday
+date: 2026-09-02
+time: 19:30
+weeks: 4
+```
+
+Useful keys: `name`, `date`, `time`, `finish_time`, `duration`, `acts` (or `set`,
+repeated), `price` (repeated), `genre`, `information`, `series`, `category`,
+`tickets`, `url`, `internal_description`, `status`, `weeks` (repeat the entry
+weekly), `venue_id`, and `id` to target an existing gig. `status: delete` removes
+one. There is fuller prose in the clipper format document.
+
+`--venue-id` sets the venue for entries that do not name their own with a
+`venue_id:` line. Times are interpreted in that venue's time zone.
+
+Three things worth knowing:
+
+- **A gig is matched on name, date and venue.** Sending a corrected file again
+  updates the same gigs rather than duplicating them, which is what makes a
+  failed upload safe to retry.
+- **Clipper stops at the first bad entry**, so entries before it have already
+  been applied. The command prints which entry failed and the id of the upload
+  it kept; fix the file and send it again.
+- **A hundred entries per upload.** Processing happens inside the request, and
+  entries carrying an `internal_description` each cost a genre-suggestion call,
+  so a big file has to be split.
+
+```sh
+# what went in, and when
+lml uploads list --source cli
+
+# the content and every gig one upload touched
+lml uploads show 3c2b1a09-... --json | jq '.gigs[].name'
+```
+
 ### Exit status
 
 | Status | Meaning |
@@ -127,6 +185,9 @@ Base URL `https://api.lml.live`. Everything below needs
 | GET | `/v1/admin/acts/:id` |
 | POST | `/v1/admin/acts` |
 | PATCH | `/v1/admin/acts/:id` |
+| GET | `/v1/admin/uploads` `?source=&page=&per_page=` |
+| GET | `/v1/admin/uploads/:id` |
+| POST | `/v1/admin/uploads` |
 
 Collections are wrapped, and always paginated — `per_page` defaults to 50 and is
 capped at 100:
@@ -154,8 +215,20 @@ Errors are JSON, with per field detail on a 422:
 { "error": "That record is not valid.", "details": { "time_zone": ["invalid time zone"] } }
 ```
 
-`null` clears a field. There is no `DELETE` on either resource: a venue owns its
-gigs, so deleting one would take its whole history with it.
+`null` clears a field. There is no `DELETE` on venues or acts: a venue owns its
+gigs, so deleting one would take its whole history with it. Uploads have no
+`PATCH` either — an upload is the record of what was sent, so correcting content
+means sending a new one.
+
+A rejected upload comes back as `422` carrying both keys, so the uniform rule
+(every non-2xx has an `error`) still holds and you can still see what landed:
+
+```json
+{
+  "error": "2: 'not a date' is not a valid date",
+  "upload": { "id": "...", "status": "Failed", "gigs": [{ "name": "Sniffers Live" }] }
+}
+```
 
 ## Notes for writing your own client
 

@@ -23,9 +23,13 @@ module LmlAdmin
       json = extract_json_flag
       resource_name = @argv.shift
       return check(json) if resource_name == "check"
+      return Uploads.new(self, @argv, output(json: json)).run if resource_name == "uploads"
 
       dispatch(resource_name, json)
     rescue Config::MissingToken, InsecureUrlError, ArgumentError => e
+      output(json: false).error(e.message)
+      2
+    rescue Errno::ENOENT => e
       output(json: false).error(e.message)
       2
     rescue ApiError => e
@@ -33,6 +37,14 @@ module LmlAdmin
       failure_status(e)
     rescue Interrupt
       130
+    end
+
+    def client
+      @client ||= Client.new(
+        base_url: Config.base_url,
+        token: Config.token,
+        allow_insecure: Config.allow_insecure?,
+      )
     end
 
     private
@@ -134,6 +146,8 @@ module LmlAdmin
     def report(error, json)
       out = output(json: json)
       out.error("#{error.status}: #{error.message}", error.details)
+      upload = error.body["upload"] if error.body.is_a?(Hash)
+      out.puts("Upload #{upload['id']} was kept - fix the content and send it again.") if upload
       return unless error.status == 401
 
       out.puts("Issue or check your token at https://www.livemusiclocator.com.au/backstage/api_tokens")
@@ -152,14 +166,6 @@ module LmlAdmin
       output(json: false).error(message)
       output(json: false).puts("Run `lml help` for the full list.")
       2
-    end
-
-    def client
-      @client ||= Client.new(
-        base_url: Config.base_url,
-        token: Config.token,
-        allow_insecure: Config.allow_insecure?,
-      )
     end
 
     def output(json:)
@@ -181,6 +187,9 @@ module LmlAdmin
 
       Usage:
         lml check
+        lml uploads create --file PATH [--venue-id ID] [--source NAME] [--json]
+        lml uploads list   [--source NAME] [--page N] [--per-page N] [--json]
+        lml uploads show   <id> [--json]
         lml <venues|acts> list   [--q QUERY] [--page N] [--per-page N] [--json]
         lml <venues|acts> show   <id> [--json]
         lml <venues|acts> create --name NAME [--field value ...] [--json]
@@ -194,6 +203,9 @@ module LmlAdmin
         lml acts create --name "Cash Savage" --country Australia --genres "blues,country"
         lml acts update 0a1b2c3d-... --instagram https://www.instagram.com/cashsavage
         lml acts update 0a1b2c3d-... --unset instagram
+
+        lml uploads create --file friday.clipper --venue-id 0a1b2c3d-... --source cli
+        cat friday.clipper | lml uploads create --file - --venue-id 0a1b2c3d-...
 
       Venue fields:
         #{Resource.find('venues').fields.keys.map { |f| "--#{f.to_s.tr('_', '-')}" }.join(' ')}
@@ -212,6 +224,14 @@ module LmlAdmin
         LML_ADMIN_TOKEN     the bearer token to authenticate with
         LML_API_URL         defaults to https://api.lml.live
         LML_ALLOW_INSECURE  set to 1 to allow a plain http base url, for local dev
+
+      Uploads:
+        Clipper content, the same format the admin upload form takes. Entries are
+        separated by a line of ---, and each entry is `key: value` lines. A gig is
+        matched on name, date and venue, so resending a corrected file is safe.
+
+        --venue-id sets the venue for entries that do not name their own with a
+        `venue_id:` line. --file - reads standard input.
 
       Exit status:
         0 fine   1 request rejected   2 bad usage   3 token refused

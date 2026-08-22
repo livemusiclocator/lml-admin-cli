@@ -8,11 +8,12 @@ module LmlAdmin
   # Anything the API refused. `details` carries the per field errors from a 422,
   # so a caller can point at the field that was actually wrong.
   class ApiError < StandardError
-    attr_reader :status, :details
+    attr_reader :status, :details, :body
 
-    def initialize(status:, message:, details: nil)
+    def initialize(status:, message:, details: nil, body: {})
       @status = status
       @details = details
+      @body = body
       super(message)
     end
   end
@@ -85,6 +86,7 @@ module LmlAdmin
         status: response.code.to_i,
         message: parsed["error"] || "The API returned HTTP #{response.code}.",
         details: parsed["details"],
+        body: parsed,
       )
     end
 
