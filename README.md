@@ -3,7 +3,7 @@
 A command line client for the Live Music Locator admin API, and a worked example
 of how to talk to it.
 
-The client is stdlib only — `net/http` and `json`, no gems at runtime. If you are
+The gem is stdlib only — `net/http` and `json`, no runtime dependencies. If you are
 writing your own integration, `lib/lml_admin/client.rb` is about eighty lines and
 shows everything the API expects.
 
@@ -55,8 +55,20 @@ Token accepted by https://api.lml.live.
 Ruby 3.0 or newer, nothing else.
 
 ```sh
+gem install lml_admin
+```
+
+or in a `Gemfile`:
+
+```ruby
+gem "lml_admin"
+```
+
+Either way you get the `lml` command. From a checkout instead:
+
+```sh
 git clone git@github.com:livemusiclocator/lml-admin-cli.git
-ln -s "$PWD/lml-admin-cli/bin/lml" ~/bin/lml
+ln -s "$PWD/lml-admin-cli/exe/lml" ~/bin/lml
 ```
 
 ## Usage
@@ -247,12 +259,20 @@ Three things this one does that yours should too:
 
 ```sh
 bundle install
-bundle exec rspec
+bundle exec rake
 ```
 
 Tests use webmock, so nothing reaches the real API. Against a local copy of the
 Rails app:
 
 ```sh
-LML_API_URL=http://api.lml.test:3000 LML_ALLOW_INSECURE=1 bin/lml check
+LML_API_URL=http://api.lml.test:3000 LML_ALLOW_INSECURE=1 bundle exec exe/lml check
 ```
+
+Releasing: bump `LmlAdmin::VERSION` in `lib/lml_admin/version.rb`, then
+
+```sh
+bundle exec rake release
+```
+
+which tags the version, builds the gem and pushes it to rubygems.org.

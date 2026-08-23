@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-require_relative "../lib/lml_admin"
+require "lml_admin"
 
 exit LmlAdmin::CLI.new(ARGV).run

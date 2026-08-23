@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require "webmock/rspec"
-require_relative "../lib/lml_admin"
+require "lml_admin"
 
 RSpec.configure do |config|
   config.expect_with(:rspec) { |expectations| expectations.syntax = :expect }

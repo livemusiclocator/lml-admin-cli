@@ -2,8 +2,9 @@
 
 source "https://rubygems.org"
 
-# The client itself is stdlib only - these are for the tests.
-group :development, :test do
-  gem "rspec", "~> 3.13"
-  gem "webmock", "~> 3.24"
-end
+# The gem itself is stdlib only - its dependencies here are all development.
+gemspec
+
+gem "rake", "~> 13.0"
+gem "rspec", "~> 3.13"
+gem "webmock", "~> 3.24"
