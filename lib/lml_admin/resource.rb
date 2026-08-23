@@ -23,12 +23,36 @@ module LmlAdmin
         musicbrainz: :string, rym: :string, spotify: :string, wikipedia: :string,
         youtube: :string
       }.freeze,
+      # Gigs have no writable fields because the API will not write one. They are
+      # created by posting clipper content to uploads, which is the only path
+      # that knows how to match an entry against a gig we already hold.
+      gigs: {}.freeze,
+    }.freeze
+
+    # What each resource will answer to. Anything not listed here is a usage
+    # error before a request is made, so `lml gigs update` cannot get as far as
+    # a confusing 404.
+    ACTIONS = {
+      venues: %w[list show create update].freeze,
+      acts: %w[list show create update].freeze,
+      gigs: %w[list show clipper].freeze,
+    }.freeze
+
+    # The filters `list` understands on top of --page and --per-page. Gigs are
+    # filtered rather than searched: the endpoint deliberately has no `q`,
+    # because Gig.search forces `visible` and this endpoint must show drafts.
+    LIST_FILTERS = {
+      venues: %i[q].freeze,
+      acts: %i[q].freeze,
+      gigs: %i[venue_id date_from date_to].freeze,
     }.freeze
 
     # The columns a `list` prints. Everything is in --json if you want the rest.
+    # A dotted column reaches into a nested object - see Output#table.
     COLUMNS = {
       venues: %i[id name location capacity],
       acts: %i[id name country location],
+      gigs: ["date", "start_time", "name", "status", "venue.name", "id"].freeze,
     }.freeze
 
     NAMES = FIELD_TYPES.keys.map(&:to_s).freeze
@@ -55,6 +79,18 @@ module LmlAdmin
 
     def columns
       COLUMNS.fetch(plural.to_sym)
+    end
+
+    def actions
+      ACTIONS.fetch(plural.to_sym)
+    end
+
+    def list_filters
+      LIST_FILTERS.fetch(plural.to_sym)
+    end
+
+    def clipper_path
+      "#{collection_path}/clipper"
     end
 
     def collection_path

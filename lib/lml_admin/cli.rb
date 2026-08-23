@@ -6,8 +6,6 @@ module LmlAdmin
   # Argument parsing and dispatch. Every command ends up as one HTTP call, so
   # this file doubles as a map of the API.
   class CLI
-    ACTIONS = %w[list show create update].freeze
-
     def initialize(argv, output: nil, client: nil)
       @argv = argv.dup
       @output = output
@@ -29,6 +27,10 @@ module LmlAdmin
     rescue Config::MissingToken, InsecureUrlError, ArgumentError => e
       output(json: false).error(e.message)
       2
+    # A mistyped flag is a usage error, not a bug. Without this a typo prints a
+    # ruby backtrace, which tells you nothing about which flag you got wrong.
+    rescue OptionParser::ParseError => e
+      usage_error(e.message)
     rescue Errno::ENOENT => e
       output(json: false).error(e.message)
       2
@@ -52,13 +54,15 @@ module LmlAdmin
     def dispatch(resource_name, json)
       resource = Resource.find(resource_name)
       action = @argv.shift
-      return usage_error("Expected one of #{ACTIONS.join(', ')} after #{resource_name}.") unless ACTIONS.include?(action)
+      unless resource.actions.include?(action)
+        return usage_error("Expected one of #{resource.actions.join(', ')} after #{resource_name}.")
+      end
 
       send(action, resource, output(json: json))
     end
 
     def list(resource, out)
-      options = parse_list_options
+      options = parse_list_options(resource)
       payload = client.get(resource.collection_path, options)
 
       out.collection(payload.fetch(resource.plural), payload.fetch("meta"), resource.columns)
@@ -70,6 +74,14 @@ module LmlAdmin
       return usage_error("Which #{resource.singular}? Pass its id.") if id.nil?
 
       out.record(client.get(resource.member_path(id)).fetch(resource.singular))
+      0
+    end
+
+    # The clipper text for whatever the same filters as `list` select. Prints to
+    # stdout so it can be redirected into a file, edited, and sent back through
+    # `uploads create` - the same format, both directions.
+    def clipper(resource, out)
+      out.raw(client.get_text(resource.clipper_path, parse_list_options(resource)))
       0
     end
 
@@ -104,10 +116,12 @@ module LmlAdmin
       0
     end
 
-    def parse_list_options
+    def parse_list_options(resource)
       options = {}
       OptionParser.new do |parser|
-        parser.on("--q QUERY") { |value| options["q"] = value }
+        resource.list_filters.each do |filter|
+          parser.on("#{resource.flag_for(filter)} VALUE") { |value| options[filter.to_s] = value }
+        end
         parser.on("--page PAGE") { |value| options["page"] = value }
         parser.on("--per-page COUNT") { |value| options["per_page"] = value }
       end.parse!(@argv)
@@ -194,6 +208,9 @@ module LmlAdmin
         lml <venues|acts> show   <id> [--json]
         lml <venues|acts> create --name NAME [--field value ...] [--json]
         lml <venues|acts> update <id> [--field value ...] [--unset FIELD] [--json]
+        lml gigs list    [--venue-id ID] [--date-from DATE] [--date-to DATE] [--page N] [--json]
+        lml gigs show    <id> [--json]
+        lml gigs clipper [--venue-id ID] [--date-from DATE] [--date-to DATE]
 
       Examples:
         lml venues list --q tote
@@ -204,6 +221,10 @@ module LmlAdmin
         lml acts update 0a1b2c3d-... --instagram https://www.instagram.com/cashsavage
         lml acts update 0a1b2c3d-... --unset instagram
 
+        lml gigs list --venue-id 0a1b2c3d-...
+        lml gigs list --venue-id 0a1b2c3d-... --date-to 2026-12-31 --per-page 100 --json
+        lml gigs clipper --venue-id 0a1b2c3d-... > vine.clipper
+
         lml uploads create --file friday.clipper --venue-id 0a1b2c3d-... --source cli
         cat friday.clipper | lml uploads create --file - --venue-id 0a1b2c3d-...
 
@@ -212,6 +233,18 @@ module LmlAdmin
 
       Act fields:
         #{Resource.find('acts').fields.keys.map { |f| "--#{f.to_s.tr('_', '-')}" }.join(' ')}
+
+      Gigs:
+        Read only. Gigs are written by posting clipper content to uploads, which
+        is the only path that matches an entry against a gig already held.
+
+        A listing is upcoming by default; pass --date-from to reach back. Dates
+        are YYYY-MM-DD and are checked strictly, because a silently misread date
+        means silently missing gigs. Unlike the public API this shows drafts and
+        hidden gigs, so you can tell a show is already here before adding it again.
+
+        `clipper` prints the same text as the admin "Download Gigs" button and is
+        not paginated - half a clipper file is not a clipper file.
 
       Authentication:
         LML_ADMIN_TOKEN=lml_admin_...   or ~/.config/lml/credentials (chmod 600)

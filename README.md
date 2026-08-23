@@ -79,6 +79,9 @@ lml <venues|acts> list   [--q QUERY] [--page N] [--per-page N] [--json]
 lml <venues|acts> show   <id> [--json]
 lml <venues|acts> create --name NAME [--field value ...] [--json]
 lml <venues|acts> update <id> [--field value ...] [--unset FIELD] [--json]
+lml gigs list    [--venue-id ID] [--date-from DATE] [--date-to DATE] [--page N] [--json]
+lml gigs show    <id> [--json]
+lml gigs clipper [--venue-id ID] [--date-from DATE] [--date-to DATE]
 lml uploads create --file PATH [--venue-id ID] [--source NAME] [--json]
 lml uploads list   [--source NAME] [--page N] [--per-page N] [--json]
 lml uploads show   <id> [--json]
@@ -114,6 +117,50 @@ lml venues list --per-page 100 --json | jq -r '.records[] | [.id, .name] | @tsv'
 
 Comma separated values become JSON arrays (`--tags`, `--genres`). `--capacity`
 becomes a number, `--latitude` and `--longitude` become floats.
+
+## Reading a venue's gigs
+
+`lml gigs` is read only. It exists to answer "what have we already got coming up
+here", which is the question you have to answer before adding anything.
+
+```sh
+# what is coming up at one venue
+lml gigs list --venue-id 9f8e7d6c-...
+
+DATE        START  NAME             STATUS     VENUE             ID
+2026-09-04  19:00  Songwriting...   confirmed  Golden Vine Hotel  1a2b...
+2026-09-18  20:00  Andrew Swift     confirmed  Golden Vine Hotel  3c4d...
+
+page 1 of 1 - 2 in total
+
+# a window, and the full record for each
+lml gigs list --venue-id 9f8e7d6c-... --date-to 2026-12-31 --per-page 100 --json
+```
+
+A listing is **upcoming by default** — pass `--date-from` to reach back. Dates are
+`YYYY-MM-DD` and are checked strictly, because `Date.parse("next tuesdayish")` is
+next Tuesday and a silently misread window means silently missing gigs.
+
+Unlike the public API, this shows **drafts and hidden gigs**. That is the point: a
+show already sitting here unpublished is one you must not add twice.
+
+There is no `--q`. Filter by venue and date instead — the endpoint has no search
+because the search scope would force `visible` and hide exactly what you need.
+
+### Round tripping through clipper
+
+`lml gigs clipper` prints the same text as the admin "Download Gigs" button, so
+what comes out goes straight back in:
+
+```sh
+lml gigs clipper --venue-id 9f8e7d6c-... > vine.clipper
+$EDITOR vine.clipper
+lml uploads create --file vine.clipper --venue-id 9f8e7d6c-...
+```
+
+Entries keep their `id:` line, so an edited entry updates that gig rather than
+creating a second one. `clipper` is not paginated — half a clipper file is not a
+clipper file.
 
 ## Uploading gigs from a file
 

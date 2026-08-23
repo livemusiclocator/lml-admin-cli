@@ -39,10 +39,19 @@ describe LmlAdmin::CLI do
 
   describe "usage errors" do
     it "rejects an unknown resource without making a request" do
-      status, printed = run("gigs", "list")
+      status, printed = run("promoters", "list")
 
       expect(status).to eq(2)
-      expect(printed).to include("Unknown resource gigs")
+      expect(printed).to include("Unknown resource promoters")
+    end
+
+    # Gigs are read only, and saying so up front beats a puzzling 404 from a
+    # route that does not exist.
+    it "refuses to update a gig, which the api will not do" do
+      status, printed = run("gigs", "update", "g1", "--name", "Nope")
+
+      expect(status).to eq(2)
+      expect(printed).to include("Expected one of list, show, clipper")
     end
 
     it "rejects an unknown action" do
@@ -109,6 +118,91 @@ describe LmlAdmin::CLI do
       _, printed = run("venues", "list", json: true)
 
       expect(JSON.parse(printed)["records"].first["name"]).to eq("The Tote")
+    end
+  end
+
+  describe "listing gigs" do
+    before do
+      @body = {
+        gigs: [{
+          id: "g1", name: "Andrew Swift", date: "2026-09-18", start_time: "20:00",
+          status: "confirmed", venue: { id: "v1", name: "Golden Vine Hotel" }
+        }],
+        meta: { page: 1, per_page: 50, total: 1 },
+      }.to_json
+    end
+
+    it "shows the venue name from the nested venue object" do
+      stub_request(:get, "https://api.example.test/v1/admin/gigs")
+        .to_return(body: @body, headers: { "Content-Type" => "application/json" })
+
+      status, printed = run("gigs", "list")
+
+      expect(status).to eq(0)
+      expect(printed).to include("Golden Vine Hotel")
+      expect(printed).to include("VENUE")
+    end
+
+    it "passes the venue and date filters through" do
+      request = stub_request(
+        :get,
+        "https://api.example.test/v1/admin/gigs?venue_id=v1&date_from=2026-08-24&date_to=2026-12-31",
+      ).to_return(body: @body, headers: { "Content-Type" => "application/json" })
+
+      run("gigs", "list", "--venue-id", "v1", "--date-from", "2026-08-24", "--date-to", "2026-12-31")
+
+      expect(request).to have_been_requested
+    end
+
+    it "has no --q, because the endpoint has none" do
+      status, printed = run("gigs", "list", "--q", "swift")
+
+      expect(status).to eq(2)
+      expect(printed).to include("invalid option: --q")
+    end
+
+    # A mistyped flag used to print a ruby backtrace, which said nothing about
+    # which flag was wrong.
+    it "reports a mistyped flag as a usage error rather than a backtrace" do
+      status, printed = run("venues", "list", "--locatoin", "melbourne")
+
+      expect(status).to eq(2)
+      expect(printed).to include("invalid option: --locatoin")
+      expect(printed).to include("lml help")
+    end
+  end
+
+  describe "gigs clipper" do
+    it "prints the clipper text untouched, so it can be redirected to a file" do
+      clipper = "---\nname: Andrew Swift\ndate: 2026-09-18\n"
+      stub_request(:get, "https://api.example.test/v1/admin/gigs/clipper?venue_id=v1")
+        .to_return(body: clipper, headers: { "Content-Type" => "text/plain" })
+
+      status, printed = run("gigs", "clipper", "--venue-id", "v1")
+
+      expect(status).to eq(0)
+      expect(printed).to eq(clipper)
+    end
+
+    it "asks for text rather than json, and never sends the token in the query" do
+      request = stub_request(:get, "https://api.example.test/v1/admin/gigs/clipper")
+                .with(headers: { "Accept" => "text/plain, */*" })
+                .to_return(body: "", headers: { "Content-Type" => "text/plain" })
+
+      run("gigs", "clipper")
+
+      expect(request).to have_been_requested
+    end
+
+    it "still reports a refused token as a token problem" do
+      stub_request(:get, "https://api.example.test/v1/admin/gigs/clipper")
+        .to_return(status: 401, body: '{"error":"Provide an admin API token."}',
+                   headers: { "Content-Type" => "application/json" })
+
+      status, printed = run("gigs", "clipper")
+
+      expect(status).to eq(3)
+      expect(printed).to include("backstage/api_tokens")
     end
   end
 

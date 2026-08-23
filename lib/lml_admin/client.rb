@@ -36,11 +36,17 @@ module LmlAdmin
     end
 
     def get(path, params = {})
-      uri = uri_for(path)
-      present = params.reject { |_, value| value.nil? || value.to_s.empty? }
-      uri.query = URI.encode_www_form(present) if present.any?
+      send_request(get_request(path, params))
+    end
 
-      send_request(Net::HTTP::Get.new(uri))
+    # The response body untouched. /v1/admin/gigs/clipper answers with clipper
+    # text rather than JSON, and parsing it would throw the whole thing away.
+    #
+    # A separate method rather than a `raw:` keyword on #get, because callers
+    # pass their params as a bare trailing hash - `get(path, "q" => "x")` - and
+    # ruby would hand that to a keyword parameter instead.
+    def get_text(path, params = {})
+      send_request(get_request(path, params), raw: true)
     end
 
     def post(path, body)
@@ -57,12 +63,20 @@ module LmlAdmin
       URI.parse("#{@base_url}#{path}")
     end
 
-    def send_request(request, body = nil)
+    def get_request(path, params)
+      uri = uri_for(path)
+      present = params.reject { |_, value| value.nil? || value.to_s.empty? }
+      uri.query = URI.encode_www_form(present) if present.any?
+
+      Net::HTTP::Get.new(uri)
+    end
+
+    def send_request(request, body = nil, raw: false)
       # The token goes in a header and never in the query string. Query strings
       # end up in router logs, proxy logs, referrers and shell history - which
       # is the whole reason the API refuses a token presented that way.
       request["Authorization"] = "Bearer #{@token}"
-      request["Accept"] = "application/json"
+      request["Accept"] = raw ? "text/plain, */*" : "application/json"
       request["User-Agent"] = USER_AGENT
 
       if body
@@ -75,10 +89,14 @@ module LmlAdmin
         http.request(request)
       end
 
-      interpret(response)
+      interpret(response, raw: raw)
     end
 
-    def interpret(response)
+    # An error is JSON whatever the request asked for, so raw only changes what
+    # a success looks like.
+    def interpret(response, raw: false)
+      return response.body.to_s if raw && response.is_a?(Net::HTTPSuccess)
+
       parsed = parse(response.body)
       return parsed if response.is_a?(Net::HTTPSuccess)
 

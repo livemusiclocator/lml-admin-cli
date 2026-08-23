@@ -42,6 +42,12 @@ module LmlAdmin
       @io.puts message
     end
 
+    # No trailing newline of its own - clipper text already ends in one, and an
+    # extra blank line at the end of a file that gets uploaded again is noise.
+    def raw(text)
+      @io.print text
+    end
+
     private
 
     def dump(payload)
@@ -56,8 +62,10 @@ module LmlAdmin
     end
 
     def table(records, columns)
-      rows = records.map { |record| columns.map { |column| present(record[column.to_s]) } }
-      headers = columns.map { |column| column.to_s.upcase }
+      rows = records.map { |record| columns.map { |column| present(value_at(record, column)) } }
+      # "venue.name" is headed VENUE - the path is how to find it, not what to
+      # call it.
+      headers = columns.map { |column| column.to_s.split(".").first.upcase }
       widths = headers.each_with_index.map do |header, index|
         ([header.length] + rows.map { |row| row[index].length }).max
       end
@@ -68,6 +76,14 @@ module LmlAdmin
 
     def format_row(cells, widths)
       cells.each_with_index.map { |cell, index| cell.ljust(widths[index]) }.join("  ").rstrip
+    end
+
+    # A dotted column reaches into a nested object, so a gig listing can show
+    # its venue's name without the API having to flatten it.
+    def value_at(record, column)
+      column.to_s.split(".").reduce(record) do |value, key|
+        value.is_a?(Hash) ? value[key] : nil
+      end
     end
 
     def present(value)
