@@ -11,14 +11,14 @@ module LmlAdmin
     FIELD_TYPES = {
       venues: {
         name: :string, location: :string, address: :string, time_zone: :string,
-        capacity: :integer, vibe: :string, notes: :string, email: :string,
+        capacity: :integer, vibe: :string, notes: :string, lga: :string, email: :string,
         phone: :string, postcode: :string, website: :string, location_url: :string,
         facebook_url: :string, instagram_url: :string,
         latitude: :float, longitude: :float, tags: :list
       }.freeze,
       acts: {
         name: :string, country: :string, location: :string, email: :string,
-        website: :string, genres: :list,
+        website: :string, genres: :list, aliases: :list,
         bandcamp: :string, facebook: :string, instagram: :string, linktree: :string,
         musicbrainz: :string, rym: :string, spotify: :string, wikipedia: :string,
         youtube: :string

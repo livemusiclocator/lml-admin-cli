@@ -259,6 +259,29 @@ describe LmlAdmin::CLI do
 
       expect(request).to have_been_requested
     end
+
+    it "sends a venue's lga" do
+      request = stub_request(:patch, "https://api.example.test/v1/admin/venues/v1")
+                .with(body: { venue: { lga: "City of Yarra" } })
+                .to_return(body: { venue: { id: "v1", lga: "City of Yarra" } }.to_json,
+                           headers: { "Content-Type" => "application/json" })
+
+      status, = run("venues", "update", "v1", "--lga", "City of Yarra")
+
+      expect(status).to eq(0)
+      expect(request).to have_been_requested
+    end
+
+    it "sends an act's aliases as an array" do
+      request = stub_request(:patch, "https://api.example.test/v1/admin/acts/a1")
+                .with(body: { act: { aliases: ["Cash Savage & The Last Drinks", "CSTLD"] } })
+                .to_return(body: { act: { id: "a1" } }.to_json, headers: { "Content-Type" => "application/json" })
+
+      status, = run("acts", "update", "a1", "--aliases", "Cash Savage & The Last Drinks, CSTLD")
+
+      expect(status).to eq(0)
+      expect(request).to have_been_requested
+    end
   end
 
   describe "when the api refuses" do
